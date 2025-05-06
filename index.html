@@ -1,0 +1,232 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jump Game</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            border: 2px solid #333;
+        }
+        #game-over {
+            position: absolute;
+            font-size: 24px;
+            color: red;
+            display: none;
+            text-align: center;
+        }
+        #header {
+            font-size: 20px;
+            color: #000;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        #error-message {
+            position: absolute;
+            font-size: 18px;
+            color: red;
+            text-align: center;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="header">CA: TBD</div>
+    <div id="game-over">Game Over! Press R to Restart</div>
+    <div id="error-message">Failed to load resources. Please check your internet connection and try again.</div>
+    <script>
+        // Check if p5.js loaded successfully
+        setTimeout(() => {
+            if (typeof p5 === 'undefined') {
+                document.getElementById('error-message').style.display = 'block';
+            }
+        }, 5000); // Show error after 5 seconds if p5.js doesn't load
+
+        let player;
+        let obstacles = [];
+        let score = 0;
+        let gameOver = false;
+        let playerImg;
+
+        function preload() {
+            // Load the player image from a more reliable source
+            playerImg = loadImage('https://i.imgur.com/7K7W5.png', 
+                () => console.log('Image loaded successfully'),
+                () => console.error('Failed to load image')
+            );
+        }
+
+        function setup() {
+            createCanvas(800, 400);
+            player = new Player();
+            obstacles.push(new Obstacle());
+        }
+
+        function draw() {
+            if (!gameOver) {
+                background(220);
+
+                // Update and show player
+                player.update();
+                player.show();
+
+                // Handle obstacles
+                if (frameCount % 60 === 0) {
+                    obstacles.push(new Obstacle());
+                }
+                for (let i = obstacles.length - 1; i >= 0; i--) {
+                    obstacles[i].update();
+                    obstacles[i].show();
+                    if (obstacles[i].offscreen()) {
+                        obstacles.splice(i, 1);
+                        score += 10;
+                    }
+                    if (player.hits(obstacles[i])) {
+                        gameOver = true;
+                        document.getElementById('game-over').style.display = 'block';
+                    }
+                }
+
+                // Display score
+                textSize(20);
+                fill(0);
+                text(`Score: ${score}`, 10, 30);
+            }
+        }
+
+        function keyPressed() {
+            if (key === ' ' && !gameOver) {
+                player.jump();
+            }
+            if (key === 'r' && gameOver) {
+                // Reset game
+                score = 0;
+                obstacles = [];
+                player = new Player();
+                gameOver = false;
+                document.getElementById('game-over').style.display = 'none';
+                loop();
+            }
+        }
+
+        class Player {
+            constructor() {
+                this.y = height - 50;
+                this.x = 100;
+                this.velocity = 0;
+                this.gravity = 0.8;
+                this.lift = -15;
+                this.size = 40;
+            }
+
+            show() {
+                // Draw the image instead of a rectangle, fallback to a square if image fails
+                if (playerImg) {
+                    image(playerImg, this.x, this.y, this.size, this.size);
+                } else {
+                    fill(0, 255, 0);
+                    rect(this.x, this.y, this.size, this.size);
+                }
+            }
+
+            update() {
+                this.velocity += this.gravity;
+                this.y += this.velocity;
+                if (this.y > height - this.size) {
+                    this.y = height - this.size;
+                    this.velocity = 0;
+                }
+            }
+
+            jump() {
+                if (this.y === height - this.size) {
+                    this.velocity += this.lift;
+                }
+            }
+
+            hits(obstacle) {
+                let px = this.x + this.size / 2;
+                let py = this.y + this.size / 2;
+                let ox = obstacle.x + obstacle.w / 2;
+                let oy = obstacle.y + obstacle.h / 2;
+                let dx = abs(px - ox);
+                let dy = abs(py - oy);
+                return dx < (this.size + obstacle.w) / 2 && dy < (this.size + obstacle.h) / 2;
+            }
+        }
+
+        class Obstacle {
+            constructor() {
+                this.w = 30;
+                this.h = 50;
+                this.x = width;
+                this.y = height - this.h;
+                this.speed = 5;
+            }
+
+            show() {
+                fill(255, 0, 0);
+                rect(this.x, this.y, this.w, this.h);
+            }
+
+            update() {
+                this.x -= this.speed;
+            }
+
+            offscreen() {
+                return this.x < -this.w;
+            }
+        }
+    </script>
+</body>
+</html>
